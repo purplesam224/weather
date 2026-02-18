@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>퍼플샘 날씨 대시보드 (2x2)</title>
+    <style>
+        /* --- 폰트 및 기본 설정 --- */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); /* 시원한 블루톤 */
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #333;
+        }
+
+        h1 {
+            color: white;
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+            font-weight: 700;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        /* --- 2x2 그리드 컨테이너 설정 --- */
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* 가로 2개 고정 */
+            grid-template-rows: auto auto;  /* 세로 2줄 */
+            gap: 25px;                      /* 카드 사이 간격 */
+            width: 100%;
+            max-width: 800px;               /* 전체 폭 제한 (너무 넓어지지 않게) */
+        }
+
+        /* --- 날씨 카드 디자인 --- */
+        .weather-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 24px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.3s ease;
+        }
+
+        .weather-card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* --- 카드 상단 선택바 --- */
+        .card-header {
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        select {
+            width: 100%;
+            padding: 8px;
+            border: none;
+            background: transparent;
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #333;
+            cursor: pointer;
+            outline: none;
+            text-align: center;
+            appearance: none; /* 화살표 숨김 (깔끔하게) */
+        }
+        
+        select:hover {
+            color: #4facfe;
+        }
+
+        /* --- 날씨 아이콘 및 온도 --- */
+        .weather-main {
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        .icon { font-size: 3rem; margin-bottom: 5px; display: block; }
+        .temp { font-size: 2.5rem; font-weight: 800; color: #2d3436; }
+        .state-text { font-size: 1rem; color: #666; margin-top: 5px; font-weight: 600; }
+
+        /* --- 하단 상세 정보 --- */
+        .details {
+            display: flex;
+            justify-content: space-between;
+            background: #f8f9fa;
+            padding: 12px 15px;
+            border-radius: 16px;
+            font-size: 0.85rem;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .d-label { color: #888; font-size: 0.75rem; margin-bottom: 2px; }
+        .d-val { font-weight: 700; color: #444; }
+
+        .loading-msg { text-align: center; color: #aaa; padding: 30px 0; }
+        .error-msg { text-align: center; color: tomato; padding: 20px 0; font-size: 0.8rem; }
+
+        /* --- 모바일 대응 (화면이 작을 때만 1줄로) --- */
+        @media (max-width: 600px) {
+            .dashboard-container {
+                grid-template-columns: 1fr; /* 1열로 변경 */
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🌤️ 전국 날씨 모니터</h1>
+
+    <div class="dashboard-container">
+        <div class="weather-card">
+            <div class="card-header">
+                <select id="select-1" onchange="updateCard(1)"></select>
+            </div>
+            <div id="content-1"></div>
+        </div>
+
+        <div class="weather-card">
+            <div class="card-header">
+                <select id="select-2" onchange="updateCard(2)"></select>
+            </div>
+            <div id="content-2"></div>
+        </div>
+
+        <div class="weather-card">
+            <div class="card-header">
+                <select id="select-3" onchange="updateCard(3)"></select>
+            </div>
+            <div id="content-3"></div>
+        </div>
+
+        <div class="weather-card">
+            <div class="card-header">
+                <select id="select-4" onchange="updateCard(4)"></select>
+            </div>
+            <div id="content-4"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- API 키 및 지역 데이터 ---
+        const API_KEY = "a0e2c73cefbcf3f932d453d876e4fb86d7d348a7159b10c967be50940d913c73";
+
+        const LOCATIONS = [
+            { key: 'Goheung', name: '고흥군 (남양)', nx: 67, ny: 65 },
+            { key: 'Dongjak', name: '서울 동작구', nx: 59, ny: 125 },
+            { key: 'Damyang', name: '전남 담양군', nx: 61, ny: 76 },
+            { key: 'Jangheung', name: '전남 장흥군', nx: 59, ny: 64 },
+            { key: 'Yeosu', name: '전남 여수시', nx: 73, ny: 66 },
+            { key: 'Suncheon', name: '전남 순천시', nx: 68, ny: 68 },
+            { key: 'Mokpo', name: '전남 목포시', nx: 58, ny: 66 },
+            { key: 'Gwangju', name: '광주광역시', nx: 58, ny: 74 },
+            { key: 'Jeju', name: '제주특별자치도', nx: 52, ny: 38 },
+            { key: 'Busan', name: '부산광역시', nx: 98, ny: 76 }
+        ];
+
+        // --- 초기 실행 ---
+        window.onload = function() {
+            // 요청하신 4개 지역 기본값 설정
+            initSelect('select-1', 'Goheung');   
+            initSelect('select-2', 'Dongjak');   
+            initSelect('select-3', 'Damyang');   
+            initSelect('select-4', 'Jangheung'); 
+
+            // 데이터 로드
+            for(let i=1; i<=4; i++) updateCard(i);
+        };
+
+        function initSelect(elementId, defaultKey) {
+            const select = document.getElementById(elementId);
+            LOCATIONS.forEach(loc => {
+                const option = document.createElement('option');
+                option.value = loc.key;
+                option.text = loc.name; // 드롭다운 텍스트
+                if (loc.key === defaultKey) option.selected = true;
+                select.appendChild(option);
+            });
+        }
+
+        // --- 시간 계산 (매시 40분 기준) ---
+        function getBaseTime() {
+            const now = new Date();
+            if (now.getMinutes() < 40) now.setHours(now.getHours() - 1);
+            
+            const y = now.getFullYear();
+            const m = ('0' + (now.getMonth() + 1)).slice(-2);
+            const d = ('0' + now.getDate()).slice(-2);
+            const h = ('0' + now.getHours()).slice(-2);
+            
+            return { date: `${y}${m}${d}`, time: `${h}00` };
+        }
+
+        // --- 데이터 호출 ---
+        async function updateCard(index) {
+            const sel = document.getElementById(`select-${index}`).value;
+            const loc = LOCATIONS.find(l => l.key === sel);
+            const content = document.getElementById(`content-${index}`);
+            const { date, time } = getBaseTime();
+
+            content.innerHTML = `<div class="loading-msg">불러오는 중...</div>`;
+
+            const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey=${API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&base_date=${date}&base_time=${time}&nx=${loc.nx}&ny=${loc.ny}`;
+
+            try {
+                const res = await fetch(url);
+                const json = await res.json();
+                if (json.response.header.resultCode !== "00") throw new Error("API 오류");
+
+                const items = json.response.body.items.item;
+                let data = { T1H: "-", REH: "-", RN1: "-", WSD: "-", PTY: "0" };
+
+                items.forEach(item => {
+                    if (data[item.category] !== undefined) data[item.category] = item.obsrValue;
+                });
+
+                renderCard(content, data);
+            } catch (err) {
+                console.error(err);
+                content.innerHTML = `<div class="error-msg">로드 실패 (CORS 확인)</div>`;
+            }
+        }
+
+        // --- UI 그리기 ---
+        function renderCard(target, data) {
+            const state = getWeatherState(data.PTY);
+            
+            target.innerHTML = `
+                <div class="weather-main">
+                    <span class="icon">${state.icon}</span>
+                    <div class="temp">${data.T1H}°</div>
+                    <div class="state-text">${state.text}</div>
+                </div>
+                <div class="details">
+                    <div class="detail-item">
+                        <span class="d-label">습도</span>
+                        <span class="d-val">${data.REH}%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="d-label">바람</span>
+                        <span class="d-val">${data.WSD}m/s</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="d-label">강수</span>
+                        <span class="d-val">${data.RN1}mm</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getWeatherState(code) {
+            switch (code) {
+                case "1": return { text: "비", icon: "🌧️" };
+                case "2": return { text: "비/눈", icon: "🌨️" };
+                case "3": return { text: "눈", icon: "❄️" };
+                case "5": return { text: "빗방울", icon: "💧" };
+                case "6": return { text: "진눈깨비", icon: "🌨️" };
+                case "7": return { text: "눈날림", icon: "🌬️" };
+                case "0": default: return { text: "맑음", icon: "☀️" };
+            }
+        }
+    </script>
+</body>
+</html>
